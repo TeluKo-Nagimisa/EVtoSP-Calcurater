@@ -4,6 +4,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Optimizer {
+
+    private static final int MAX_REQUESTED_EV = 260;
+    private static final int STEP_EV = 10;
+
     private final EVSimulator simulator;
 
     public Optimizer() {
@@ -14,39 +18,85 @@ public class Optimizer {
         List<SimulationCandidate> bestCandidates = new ArrayList<>();
         int minTotalCost = Integer.MAX_VALUE;
 
-        List<int[]> allOrders = generateAllOrders();
+        int[] activeIndexes = targetSP.getActiveIndexes();
+        int[] upperBounds = calculateUpperBounds(targetSP, activeIndexes);
 
-        for (int ev1 = 0; ev1 <= 60; ev1 += 10) {
-            for (int ev2 = 0; ev2 <= 60; ev2 += 10) {
-                for (int ev3 = 0; ev3 <= 60; ev3 += 10) {
-                    for (int ev4 = 0; ev4 <= 60; ev4 += 10) {
-                        int[] requestedEV = {ev1, ev2, ev3, ev4};
+        List<int[]> allOrders = generateAllOrders(activeIndexes.length);
 
-                        for (int[] order : allOrders) {
-                            SimulationResult result = simulator.simulate(targetSP, requestedEV, order);
-                            int totalCost = result.getTotalCost();
+        List<int[]> requestedEVPatterns = new ArrayList<>();
+        generateRequestedEVPatterns(upperBounds, 0, new int[activeIndexes.length], requestedEVPatterns);
 
-                            SimulationCandidate candidate = new SimulationCandidate(requestedEV, order, result);
+        long checkedCount = 0;
 
-                            if (totalCost < minTotalCost) {
-                                minTotalCost = totalCost;
-                                bestCandidates.clear();
-                                bestCandidates.add(candidate);
-                            } else if (totalCost == minTotalCost) {
-                                bestCandidates.add(candidate);
-                            }
-                        }
-                    }
+        for (int[] activeRequestedEV : requestedEVPatterns) {
+
+            int[] requestedEV = expendToSixStats(activeRequestedEV, activeIndexes);
+
+            for (int[] activeOrder : allOrders) {
+                int[] order = convertActiveOrderToActualOrder(activeOrder, activeIndexes);
+
+                checkedCount++;
+
+                SimulationResult result = simulator.simulate(targetSP, requestedEV, order);
+                int totalCost = result.getTotalCost();
+
+                SimulationCandidate candidate = new SimulationCandidate(requestedEV, order, result);
+
+                if (totalCost < minTotalCost) {
+                    minTotalCost = totalCost;
+                    bestCandidates.clear();
+                    bestCandidates.add(candidate);
+                } else if (totalCost == minTotalCost) {
+                    bestCandidates.add(candidate);
                 }
             }
         }
 
-        return new OptimizationResult(minTotalCost, bestCandidates);
+        return new OptimizationResult(minTotalCost, bestCandidates, upperBounds, checkedCount);
     }
 
-    private List<int[]> generateAllOrders() {
+    private int[] calculateUpperBounds(TargetSP targetSP, int[] activeIndexes) {
+        int[] upperBounds = new int[activeIndexes.length];
+
+        for (int i = 0; i < activeIndexes.length; i++) {
+            int statIndex = activeIndexes[i];
+            upperBounds[i] = calculateUpperRequestedEV(targetSP.get(statIndex));
+        }
+
+        return upperBounds;
+    }
+
+    private int calculateUpperRequestedEV(int targetSP) {
+        if (targetSP <= 0) {
+            return 0;
+        }
+
+        int evMin = targetSP * 8 - 4;
+        int upper = ((evMin + 9) / 10) * 10;
+
+        return Math.min(upper, 260);
+    }
+
+    private void generateRequestedEVPatterns(int[] upperBounds, int depth, int[] current, List<int[]> result) {
+        if (depth == upperBounds.length) {
+            result.add(current.clone());
+            return;
+        }
+
+        for (int ev = 0; ev <= upperBounds[depth]; ev += STEP_EV) {
+            current[depth] = ev;
+            generateRequestedEVPatterns(upperBounds, depth + 1, current, result);
+        }
+    }
+
+    private List<int[]> generateAllOrders(int size) {
         List<int[]> orders = new ArrayList<>();
-        int[] current = {0,1,2,3};
+
+        int[] current = new int[size];
+        for (int i = 0; i < size; i++) {
+            current[i] = i;
+        }
+
         permute(current, 0, orders);
         return orders;
     }
@@ -68,5 +118,25 @@ public class Optimizer {
         int temp = array[i];
         array[i] = array[j];
         array[j] = temp;
+    }
+
+    private int[] expendToSixStats(int [] activeRequestedEV, int[] activeIndexes) {
+        int[] requestedEV = new int[6];
+
+        for (int i = 0; i < activeIndexes.length; i++){
+            requestedEV[activeIndexes[i]] = activeRequestedEV[i];
+        }
+
+        return  requestedEV;
+    }
+
+    private int[] convertActiveOrderToActualOrder(int[] activeOrder, int[] activeIndexes) {
+        int[] actualOrder = new int[activeOrder.length];
+
+        for (int i = 0; i < activeOrder.length; i++) {
+            actualOrder[i] = activeIndexes[activeOrder[i]];
+        }
+
+        return actualOrder;
     }
 }

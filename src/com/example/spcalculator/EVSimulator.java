@@ -5,7 +5,9 @@ public class EVSimulator {
     private static final int MAX_TOTAL_EV = 510;
 
     public SimulationResult simulate(TargetSP targetSP, int[] requestedEV, int[] order) {
-        int[] finalEV = new int[4];
+        int statCount = targetSP.size();
+
+        int[] finalEV = new int[statCount];
         int remainingTotalEV = MAX_TOTAL_EV;
 
         for (int index : order) {
@@ -18,10 +20,10 @@ public class EVSimulator {
             remainingTotalEV -= actualAdd;
         }
 
-        int[] actualSP = new int[4];
-        int[] lackSP = new int[4];
+        int[] actualSP = new int[statCount];
+        int[] lackSP = new int[statCount];
 
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < statCount; i++) {
             actualSP[i] = convertEVtoSP(finalEV[i]);
             lackSP[i] = Math.max(targetSP.get(i) - actualSP[i], 0);
         }
